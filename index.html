@@ -270,24 +270,58 @@
         let globe = null;
 
         // Inisialisasi Aplikasi
+        // Inisialisasi Aplikasi
+        // Inisialisasi Aplikasi
         async function mulakanAplikasi() {
             try {
-                // 1. Muat turun data API
-                const res = await fetch('https://restcountries.com/v3.1/all?fields=name,capital,timezones,flags,latlng');
+                // 1. Tambah 'capitalInfo' dalam URL API untuk dapatkan koordinat tepat ibu negara
+                const res = await fetch('https://restcountries.com/v3.1/all?fields=name,capital,timezones,flags,latlng,capitalInfo');
                 const dataRaw = await res.json();
 
-                // Bersihkan data yang tidak lengkap
+                // 2. Bersihkan dan format data dengan logik saringan zon masa
                 dataGlobal = dataRaw.filter(item => item.latlng && item.latlng.length === 2 && item.capital.length > 0)
-                    .map(item => ({
-                        name: item.name.common,
-                        capital: item.capital[0],
-                        lat: item.latlng[0],
-                        lng: item.latlng[1],
-                        timezone: item.timezones[0],
-                        flag: item.flags.svg
-                    })).sort((a, b) => a.name.localeCompare(b.name));
+                    .map(item => {
+                        // Guna koordinat spesifik ibu negara (jika tiada, guna titik tengah negara)
+                        const latBandar = item.capitalInfo?.latlng?.[0] || item.latlng[0];
+                        const lngBandar = item.capitalInfo?.latlng?.[1] || item.latlng[1];
+                        
+                        let zonMasaTepat = item.timezones[0];
 
-                // 2. Sediakan 3D Globe
+                        // LOGIK PEMBETULAN: Jika negara ada lebih dari 1 zon masa
+                        if (item.timezones.length > 1) {
+                            // Anggaran offset berdasarkan putaran bumi (Longitud / 15 darjah)
+                            const anggaranOffset = Math.round(lngBandar / 15);
+                            
+                            let bezaTerdekat = 999;
+                            item.timezones.forEach(tz => {
+                                let jam = 0;
+                                if (tz !== "UTC") {
+                                    const tanda = tz.includes('-') ? -1 : 1;
+                                    const angka = tz.replace('UTC', '').replace('+', '').replace('-', '').split(':');
+                                    // Tukar format rentetan ke nombor perpuluhan
+                                    jam = tanda * (parseInt(angka[0]) + (parseInt(angka[1])/60 || 0));
+                                }
+                                
+                                // Cari zon masa yang paling padan dengan lokasi koordinat ibu negara
+                                const beza = Math.abs(jam - anggaranOffset);
+                                if (beza < bezaTerdekat) {
+                                    bezaTerdekat = beza;
+                                    zonMasaTepat = tz;
+                                }
+                            });
+                        }
+
+                        return {
+                            name: item.name.common,
+                            capital: item.capital[0],
+                            lat: latBandar,
+                            lng: lngBandar,
+                            timezone: zonMasaTepat,
+                            flag: item.flags.svg
+                        };
+                    }).sort((a, b) => a.name.localeCompare(b.name));
+
+                // 3. Sediakan 3D Globe
                 globe = Globe()(document.getElementById('globeViz'))
                     .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
                     .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
@@ -302,18 +336,18 @@
                         globe.controls().autoRotate = false;
                         fokusNegara3D(d);
                     });
-
+                
                 globe.controls().autoRotate = true;
                 globe.controls().autoRotateSpeed = 0.5;
 
-                // 3. Papar data pertama kali ke Jadual 2D (tapi kekal sembunyi)
+                // 4. Papar data ke Jadual 2D
                 binaJadual2D('');
 
-                // 4. Kemaskini UI
+                // 5. Kemaskini UI
                 document.getElementById('status').style.display = 'none';
                 document.getElementById('btnToggle').style.display = 'block';
 
-                // 5. Mulakan pusingan jam induk
+                // 6. Mulakan jam
                 setInterval(kemaskiniJamInduk, 1000);
 
             } catch (error) {
@@ -321,7 +355,6 @@
                 console.error(error);
             }
         }
-
         // Fungsi menukar antara 3D dan 2D
         function tukarMod() {
             mod3D = !mod3D;
